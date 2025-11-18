@@ -6,3 +6,4 @@ CREATE TABLE IF NOT EXISTS tasks (
     end_date TEXT,
     status TEXT
 );
+

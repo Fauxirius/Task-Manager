@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Task{% endblock %}
+
+{% block content %}
+    <h1 class="mb-4 h2">Edit Task</h1>
+    <div class="card p-4">
+        <form action="/edit/{{ task.id }}" method="post">
+            <div class="form-group"><label for="title">Title</label><input type="text" class="form-control" id="title" name="title" value="{{ task.title }}" required></div>
+            <div class="form-group"><label for="description">Description</label><textarea class="form-control" id="description" name="description" rows="3" required>{{ task.description }}</textarea></div>
+            <div class="form-row">
+                <div class="form-group col-md-6"><label for="start_date">Start Date</label><input type="date" class="form-control" id="start_date" name="start_date" value="{{ task.start_date }}" required></div>
+                <div class="form-group col-md-6"><label for="end_date">End Date</label><input type="date" class="form-control" id="end_date" name="end_date" value="{{ task.end_date }}" required></div>
+            </div>
+            <div class="form-group"><label for="status">Status</label><select class="form-control" id="status" name="status"><option value="ToDo" {% if task.status == 'ToDo' %}selected{% endif %}>ToDo</option><option value="InProgress" {% if task.status == 'InProgress' %}selected{% endif %}>InProgress</option><option value="Completed" {% if task.status == 'Completed' %}selected{% endif %}>Completed</option></select></div>
+            <button type="submit" class="btn btn-primary">Update Task</button>
+            <a href="/" class="btn btn-secondary">Cancel</a>
+        </form>
+    </div>
+{% endblock %}
+
