@@ -1,18 +1,22 @@
+# Import necessary libraries
 import sqlite3
 import os
 from flask import Flask, render_template, request, redirect, url_for, jsonify, abort, flash, g
 import config
 from datetime import datetime, timedelta
 
+# Initialize the Flask application
 app = Flask(__name__)
 app.config.from_object(config)
 
+# Function to create and populate the database if it doesn't exist
 def create_db_and_populate():
     if not os.path.exists(app.config['DATABASE']):
         init_db()
         populate_db()
 
 # Database setup
+# Function to initialize the database
 def init_db():
     with app.app_context():
         db = get_db()
@@ -20,6 +24,7 @@ def init_db():
             db.cursor().executescript(f.read())
         db.commit()
 
+# Function to get the database connection
 def get_db():
     db = getattr(g, '_database', None)
     if db is None:
@@ -27,17 +32,19 @@ def get_db():
         db.row_factory = sqlite3.Row
     return db
 
+# Function to close the database connection at the end of the request
 @app.teardown_appcontext
 def close_connection(exception):
     db = getattr(g, '_database', None)
     if db is not None:
         db.close()
 
+# Function to populate the database with initial data
 def populate_db():
     with app.app_context():
         db = get_db()
         c = db.cursor()
-        # Check if tasks table is empty before populating
+        # Check if the tasks table is empty before populating
         c.execute('SELECT COUNT(*) FROM tasks')
         count = c.fetchone()[0]
         if count == 0:
@@ -93,28 +100,35 @@ def populate_db():
                              (task['title'], task['description'], task['start_date'], task['end_date'], task['status']))
             db.commit()
 
+# Create and populate the database
 create_db_and_populate()
 
+# Error handler for 404 Not Found
 @app.errorhandler(404)
 def page_not_found(e):
     return render_template('404.html'), 404
 
+# Route for the main index page
 @app.route('/')
 def index():
+    # Pagination
     page = request.args.get('page', 1, type=int)
     per_page = 10
     offset = (page - 1) * per_page
 
+    # Sorting
     sort_by = request.args.get('sort_by', 'id')
     # Whitelist of allowed sort_by columns to prevent SQL injection
     allowed_sort_by = ['id', 'title', 'start_date', 'end_date', 'status']
     if sort_by not in allowed_sort_by:
         sort_by = 'id'
 
+    # Filtering
     filter_by_status = request.args.get('filter_by_status', 'all')
 
     db = get_db()
     
+    # Get total number of tasks for pagination
     count_query = "SELECT COUNT(*) FROM tasks"
     params = []
     if filter_by_status != 'all':
@@ -123,6 +137,7 @@ def index():
     total_tasks = db.execute(count_query, params).fetchone()[0]
     total_pages = (total_tasks + per_page - 1) // per_page
 
+    # Get tasks for the current page
     tasks_query = f"SELECT * FROM tasks"
     if filter_by_status != 'all':
         tasks_query += " WHERE status = ?"
@@ -132,12 +147,12 @@ def index():
 
     tasks = db.execute(tasks_query, params).fetchall()
 
-    # Calculate task stats
+    # Calculate task statistics
     stats_query = db.execute("SELECT status, COUNT(*) as count FROM tasks GROUP BY status").fetchall()
     stats = {stat['status']: stat['count'] for stat in stats_query}
     stats['total'] = sum(stats.values())
 
-    # Get reminders
+    # Get reminders for urgent and approaching deadline tasks
     today = datetime.now().date()
     urgent_tasks = []
     approaching_deadline_tasks = []
@@ -164,9 +179,15 @@ def index():
                            total_pages=total_pages,
                            task_statuses=app.config['TASK_STATUSES'])
 
+# Route to add a new task
 @app.route('/add', methods=['GET', 'POST'])
 def add_task():
     if request.method == 'POST':
+        title = request.form['title']
+        if not title:
+            flash('Title is required.', 'danger')
+            return render_template('add.html', task_statuses=app.config['TASK_STATUSES'])
+
         start_date = request.form['start_date']
         end_date = request.form['end_date']
 
@@ -176,12 +197,13 @@ def add_task():
 
         db = get_db()
         db.execute('INSERT INTO tasks (title, description, start_date, end_date, status) VALUES (?, ?, ?, ?, ?)',
-                     (request.form['title'], request.form['description'], start_date, end_date, request.form['status']))
+                     (title, request.form['description'], start_date, end_date, request.form['status']))
         db.commit()
         flash('Task added successfully!', 'success')
         return redirect(url_for('index'))
     return render_template('add.html', task_statuses=app.config['TASK_STATUSES'])
 
+# Route to edit an existing task
 @app.route('/edit/<int:task_id>', methods=['GET', 'POST'])
 def edit_task(task_id):
     db = get_db()
@@ -206,6 +228,7 @@ def edit_task(task_id):
     
     return render_template('edit.html', task=task, task_statuses=app.config['TASK_STATUSES'])
 
+# Route to delete a task
 @app.route('/delete/<int:task_id>')
 def delete_task(task_id):
     db = get_db()
@@ -214,6 +237,7 @@ def delete_task(task_id):
     flash('Task deleted successfully!', 'success')
     return redirect(url_for('index'))
 
+# API endpoint to update the status of a task
 @app.route('/api/task/<int:task_id>/status', methods=['POST'])
 def update_task_status(task_id):
     data = request.get_json()
@@ -230,6 +254,7 @@ def update_task_status(task_id):
 
     return jsonify({'success': True, 'task': dict(task)})
 
+# API endpoint to get task events for the calendar
 @app.route('/api/tasks/events')
 def task_events():
     db = get_db()
@@ -243,13 +268,15 @@ def task_events():
         } for task in tasks
     ]
     return jsonify(events)
-
+# add a live digital clock which shows time in IST and the date time stamp on the top left section of the screen 
+# API endpoint to get all tasks
 @app.route('/api/tasks', methods=['GET'])
 def get_tasks():
     db = get_db()
     tasks = db.execute('SELECT * FROM tasks').fetchall()
     return jsonify([dict(task) for task in tasks])
 
+# API endpoint to get a single task by its ID
 @app.route('/api/task/<int:task_id>', methods=['GET'])
 def get_task(task_id):
     db = get_db()
@@ -258,6 +285,7 @@ def get_task(task_id):
         return jsonify({'error': 'Task not found'}), 404
     return jsonify(dict(task))
 
+# API endpoint to create a new task
 @app.route('/api/tasks', methods=['POST'])
 def create_task():
     data = request.get_json()
@@ -281,6 +309,7 @@ def create_task():
 
     return jsonify(dict(new_task)), 201
 
+# API endpoint to update an existing task
 @app.route('/api/task/<int:task_id>', methods=['PUT'])
 def update_task(task_id):
     data = request.get_json()
@@ -312,8 +341,9 @@ def update_task(task_id):
 
     return jsonify(dict(updated_task))
 
+# API endpoint to delete a task
 @app.route('/api/task/<int:task_id>', methods=['DELETE'])
-def api_delete_task(_id):
+def api_delete_task(task_id):
     db = get_db()
     task = db.execute('SELECT * FROM tasks WHERE id = ?', (task_id,)).fetchone()
     if not task:
@@ -323,6 +353,7 @@ def api_delete_task(_id):
     db.commit()
     return jsonify({'success': True, 'message': 'Task deleted successfully'})
 
+# API endpoint to get task statistics
 @app.route('/api/tasks/stats')
 def task_stats():
     db = get_db()
@@ -330,10 +361,12 @@ def task_stats():
     stats = {stat['status']: stat['count'] for stat in stats_query}
     return jsonify(stats)
 
+# API endpoint to get MCP servers
 @app.route('/api/mcp', methods=['GET'])
 def get_mcp():
     return jsonify(app.config['SERVERS'])
 
+# API endpoint to chat with MCP
 @app.route('/api/mcp/chat', methods=['POST'])
 def chat_with_mcp():
     data = request.get_json()
@@ -343,5 +376,7 @@ def chat_with_mcp():
     reply = f"You said: {message}"
     return jsonify({'reply': reply})
 
+# Run the Flask application
 if __name__ == '__main__':
     app.run(debug=True)
+
